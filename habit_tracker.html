@@ -1,0 +1,1636 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced HabitFlow Tracker</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#4f46e5',
+                        secondary: '#ec4899',
+                        dark: '#0f172a',
+                        darker: '#020617',
+                        glass: 'rgba(255, 255, 255, 0.1)',
+                        glassDark: 'rgba(0, 0, 0, 0.2)',
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                },
+            },
+        }
+    </script>
+
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+
+
+    <!-- Import Map -->
+    <script type="importmap">
+        {
+            "imports": {
+                "react": "https://esm.sh/react@18",
+                "react-dom/client": "https://esm.sh/react-dom@18/client",
+                "framer-motion": "https://esm.sh/framer-motion@11?deps=react@18,react-dom@18",
+                "lucide-react": "https://esm.sh/lucide-react@0.344.0?deps=react@18",
+                "recharts": "https://esm.sh/recharts@2.12.0?deps=react@18,react-dom@18"
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        .dark ::-webkit-scrollbar-thumb {
+            background: #334155;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .dark .glass-panel {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+        }
+    </style>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body
+    class="bg-indigo-50 dark:bg-darker transition-colors duration-500 min-h-screen text-gray-800 dark:text-gray-100 relative">
+
+    <!-- Background Elements -->
+    <div class="fixed inset-0 overflow-hidden pointer-events-none z-0">
+        <div
+            class="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] rounded-full bg-gradient-to-br from-indigo-400/30 to-purple-400/30 dark:from-indigo-600/20 dark:to-purple-900/20 blur-3xl animate-pulse-slow">
+        </div>
+        <div
+            class="absolute top-[60%] -right-[10%] w-[40%] h-[60%] rounded-full bg-gradient-to-tl from-pink-400/20 to-orange-400/20 dark:from-pink-900/20 dark:to-orange-900/10 blur-3xl">
+        </div>
+    </div>
+
+    <div id="root" class="relative z-10 min-h-screen flex flex-col"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useMemo } from "react";
+        import { createRoot } from "react-dom/client";
+        import { motion, AnimatePresence } from "framer-motion";
+        import {
+            CheckCircle, Trash2, BarChart3, Moon, Sun, Plus,
+            Home, LogOut, Target, Zap, Activity, ShieldCheck, Mail, Lock, Dumbbell, Flame, Utensils, Calendar, TrendingUp, Award
+        } from "lucide-react";
+        import {
+            ResponsiveContainer, AreaChart, Area, XAxis, YAxis,
+            CartesianGrid, Tooltip, PieChart, Pie, Cell
+        } from "recharts";
+
+        // --- THEME CONTEXT MOCK ---
+        const useTheme = () => {
+            const [isDark, setIsDark] = useState(
+                () => localStorage.getItem('theme') === 'dark' ||
+                    (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)
+            );
+
+            useEffect(() => {
+                if (isDark) {
+                    document.documentElement.classList.add('dark');
+                    localStorage.setItem('theme', 'dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    localStorage.setItem('theme', 'light');
+                }
+            }, [isDark]);
+
+            return { isDark, toggleTheme: () => setIsDark(!isDark) };
+        };
+
+        // --- COMPONENTS ---
+        const GlassCard = ({ children, className = "", delay = 0 }) => (
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay }}
+                className={`glass-panel rounded-2xl shadow-xl overflow-hidden ${className}`}
+            >
+                {children}
+            </motion.div>
+        );
+
+        const Button = ({ children, onClick, variant = "primary", className = "", type = "button", icon: Icon }) => {
+            const baseStyles = "inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold transition-all duration-300 active:scale-95 disabled:opacity-50 disabled:pointer-events-none";
+
+            const variants = {
+                primary: "bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-lg shadow-indigo-500/30",
+                outline: "border-2 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30",
+                ghost: "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5",
+                danger: "bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20"
+            };
+
+            return (
+                <button type={type} onClick={onClick} className={`${baseStyles} ${variants[variant]} ${className}`}>
+                    {Icon && <Icon className="w-4 h-4" />}
+                    {children}
+                </button>
+            );
+        };
+
+        const Input = ({ label, icon: Icon, type = "text", value, onChange, placeholder, required }) => (
+            <div className="space-y-1">
+                {label && <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">{label}</label>}
+                <div className="relative">
+                    {Icon && (
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Icon className="h-5 w-5 text-gray-400" />
+                        </div>
+                    )}
+                    <input
+                        type={type}
+                        value={value}
+                        onChange={onChange}
+                        placeholder={placeholder}
+                        required={required}
+                        className={`w-full bg-white/50 dark:bg-dark/50 border border-gray-200 dark:border-gray-800 focus:border-indigo-500 dark:focus:border-indigo-400 rounded-xl px-4 py-3 placeholder:text-gray-400 dark:placeholder:text-gray-600 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all ${Icon ? 'pl-10' : ''}`}
+                    />
+                </div>
+            </div>
+        );
+
+        // ============================================================
+        // Backend API URL - Change this if your server runs on a different port
+        // ============================================================
+        const API_URL = window.location.protocol === 'file:' ? 'http://localhost:3000' : window.location.origin;
+
+        // --- OTP TOAST COMPONENT ---
+        const OtpToast = ({ otp, loginId, onClose, sendStatus }) => {
+            const isEmail = loginId.includes("@");
+            const maskedId = isEmail
+                ? loginId.replace(/(.{2})(.*)(@.*)/, "$1***$3")
+                : loginId.replace(/(.{3})(.*)(.{2})$/, "$1****$3");
+
+            useEffect(() => {
+                const timer = setTimeout(onClose, 10000);
+                return () => clearTimeout(timer);
+            }, []);
+
+            return (
+                <motion.div
+                    initial={{ opacity: 0, y: -40, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -40, scale: 0.95 }}
+                    className="fixed top-6 right-6 z-50 max-w-sm w-full"
+                >
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-5 relative overflow-hidden">
+                        <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${sendStatus === "sent" ? "from-emerald-400 to-teal-500" : sendStatus === "failed" ? "from-red-400 to-orange-500" : "from-amber-400 to-yellow-500"}`}>
+                            <motion.div
+                                initial={{ width: "100%" }}
+                                animate={{ width: "0%" }}
+                                transition={{ duration: 10, ease: "linear" }}
+                                className="h-full bg-white/30"
+                            />
+                        </div>
+                        <button onClick={onClose} className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors text-lg font-bold">&times;</button>
+                        <div className="flex items-start gap-3">
+                            <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${sendStatus === "sent" ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400" : sendStatus === "failed" ? "bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400" : "bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400"}`}>
+                                {isEmail ? <Mail className="w-5 h-5" /> : <Activity className="w-5 h-5" />}
+                            </div>
+                            <div>
+                                {sendStatus === "sent" && (
+                                    <>
+                                        <p className="font-semibold text-emerald-600 dark:text-emerald-400 text-sm">
+                                            {isEmail ? "📧 OTP Sent to Email!" : "📱 OTP Sent via SMS!"}
+                                        </p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                            Verification code delivered to <span className="font-medium text-gray-700 dark:text-gray-300">{maskedId}</span>
+                                        </p>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            {isEmail ? "Check your inbox (and spam folder)." : "Check your phone messages."}
+                                        </p>
+                                    </>
+                                )}
+                                {sendStatus === "failed" && (
+                                    <>
+                                        <p className="font-semibold text-red-600 dark:text-red-400 text-sm">
+                                            {isEmail ? "❌ Email delivery failed" : "❌ SMS delivery failed"}
+                                        </p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Could not deliver OTP. Using fallback code below.</p>
+                                        <div className="mt-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded-lg inline-block">
+                                            <span className="text-xs text-gray-500 dark:text-gray-400">Your OTP: </span>
+                                            <span className="font-bold text-lg tracking-[0.3em] text-indigo-600 dark:text-indigo-400">{otp}</span>
+                                        </div>
+                                        <p className="text-[10px] text-gray-400 mt-1 italic">
+                                            {isEmail ? "Configure EMAIL_USER & EMAIL_PASS in .env" : "Configure TWILIO_* credentials in .env"}
+                                        </p>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </motion.div>
+            );
+        };
+
+        // --- AUTH COMPONENT ---
+        const AuthScreen = ({ onLogin }) => {
+            const [authMode, setAuthMode] = useState("register"); // 'register', 'login', 'forgot'
+            const [step, setStep] = useState(1); // 1 = form, 2 = OTP verification
+            const [loginId, setLoginId] = useState("");
+            const [password, setPassword] = useState("");
+            const [name, setName] = useState("");
+            const [error, setError] = useState("");
+            const [successMsg, setSuccessMsg] = useState("");
+            const [generatedOtp, setGeneratedOtp] = useState("");
+            const [enteredOtp, setEnteredOtp] = useState("");
+            const [showOtpToast, setShowOtpToast] = useState(false);
+            const [resendTimer, setResendTimer] = useState(0);
+            const [otpSendStatus, setOtpSendStatus] = useState(""); // 'sent', 'failed', 'sms'
+            const [isLoading, setIsLoading] = useState(false);
+
+            useEffect(() => {
+                if (resendTimer > 0) {
+                    const interval = setInterval(() => setResendTimer(t => t - 1), 1000);
+                    return () => clearInterval(interval);
+                }
+            }, [resendTimer]);
+
+            const validatePassword = (pwd) => {
+                if (pwd.length < 8) return "Password must be at least 8 characters long.";
+                if (!/[A-Z]/.test(pwd)) return "Password must contain at least one uppercase letter.";
+                if (!/[a-z]/.test(pwd)) return "Password must contain at least one lowercase letter.";
+                if (!/[0-9]/.test(pwd)) return "Password must contain at least one number.";
+                if (!/[!@#$%^&*(),.?":{}|<>]/.test(pwd)) return "Password must contain at least one special character.";
+                return null;
+            };
+
+            const sendOtpFromBackend = async () => {
+                setIsLoading(true);
+                try {
+                    const response = await fetch(`${API_URL}/api/send-otp`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ to: loginId, name: name }),
+                    });
+                    const data = await response.json();
+
+                    if (data.success) {
+                        setResendTimer(30);
+                        if (data.method === "email" || data.method === "sms") {
+                            setOtpSendStatus("sent");
+                            setGeneratedOtp("");
+                        } else {
+                            setOtpSendStatus("failed");
+                            setGeneratedOtp(data.otp || "");
+                        }
+                        setShowOtpToast(true);
+                        return true;
+                    } else {
+                        setError(data.message || "Failed to send OTP.");
+                        return false;
+                    }
+                } catch (err) {
+                    console.error("Backend Error:", err);
+                    setError("Cannot connect to server. Make sure backend is running (npm start).");
+                    return false;
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const verifyOtpFromBackend = async () => {
+                try {
+                    const response = await fetch(`${API_URL}/api/verify-otp`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ to: loginId, otp: enteredOtp }),
+                    });
+                    return await response.json();
+                } catch (err) {
+                    if (generatedOtp && enteredOtp === generatedOtp) {
+                        return { success: true };
+                    }
+                    return { success: false, message: "Cannot connect to server." };
+                }
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setError("");
+                setSuccessMsg("");
+
+                if (authMode === "register") {
+                    if (step === 1) {
+                        if (!name.trim()) { setError("Please enter your full name."); return; }
+                        if (!loginId.trim()) { setError("Please enter email or mobile number."); return; }
+                        const passwordError = validatePassword(password);
+                        if (passwordError) { setError(passwordError); return; }
+
+                        const users = JSON.parse(localStorage.getItem("habitUsers") || "{}");
+                        if (users[loginId]) { setError("User already exists. Please log in."); return; }
+
+                        const sent = await sendOtpFromBackend();
+                        if (sent) setStep(2);
+                    } else {
+                        setIsLoading(true);
+                        const result = await verifyOtpFromBackend();
+                        setIsLoading(false);
+                        if (!result.success) { setError(result.message || "Invalid OTP."); return; }
+
+                        const users = JSON.parse(localStorage.getItem("habitUsers") || "{}");
+                        users[loginId] = { name, password };
+                        localStorage.setItem("habitUsers", JSON.stringify(users));
+                        const user = { name, email: loginId };
+                        localStorage.setItem("habitUser", JSON.stringify(user));
+                        onLogin(user);
+                    }
+                } else if (authMode === "login") {
+                    const users = JSON.parse(localStorage.getItem("habitUsers") || "{}");
+                    const userRecord = users[loginId];
+                    if (!userRecord || userRecord.password !== password) {
+                        setError("Invalid credentials. Please register first.");
+                        return;
+                    }
+                    const user = { name: userRecord.name, email: loginId };
+                    localStorage.setItem("habitUser", JSON.stringify(user));
+                    onLogin(user);
+                } else if (authMode === "forgot") {
+                    if (step === 1) {
+                        if (!loginId.trim()) { setError("Please enter email or mobile number."); return; }
+                        const passwordError = validatePassword(password);
+                        if (passwordError) { setError(passwordError); return; }
+
+                        const users = JSON.parse(localStorage.getItem("habitUsers") || "{}");
+                        if (!users[loginId]) { setError("No account found with these credentials."); return; }
+
+                        const sent = await sendOtpFromBackend();
+                        if (sent) setStep(2);
+                    } else {
+                        setIsLoading(true);
+                        const result = await verifyOtpFromBackend();
+                        setIsLoading(false);
+                        if (!result.success) { setError(result.message || "Invalid OTP."); return; }
+
+                        const users = JSON.parse(localStorage.getItem("habitUsers") || "{}");
+                        users[loginId].password = password;
+                        localStorage.setItem("habitUsers", JSON.stringify(users));
+                        setSuccessMsg("Password reset successfully! You can now log in.");
+                        setAuthMode("login");
+                        setStep(1);
+                        setPassword("");
+                        setEnteredOtp("");
+                    }
+                }
+            };
+
+            const handleResendOtp = async () => {
+                if (resendTimer > 0) return;
+                setError("");
+                await sendOtpFromBackend();
+                setSuccessMsg("A new OTP has been sent!");
+            };
+
+            const switchMode = (mode) => {
+                setAuthMode(mode);
+                setStep(1);
+                setError("");
+                setSuccessMsg("");
+                setEnteredOtp("");
+                setShowOtpToast(false);
+            };
+
+            const getHeaderText = () => {
+                if (step === 2) return { title: "Verify OTP", desc: `Enter the 6-digit code sent to ${loginId.includes("@") ? "your email" : "your phone"}.` };
+                if (authMode === "login") return { title: "Welcome Back", desc: "Log in to track your spectacular progress." };
+                if (authMode === "register") return { title: "Create Account", desc: "Start your journey to better habits today." };
+                return { title: "Reset Password", desc: "Enter your email or mobile number and your new password." };
+            };
+            const header = getHeaderText();
+
+            return (
+                <div className="flex-1 flex items-center justify-center p-6">
+                    <AnimatePresence>
+                        {showOtpToast && (
+                            <OtpToast otp={generatedOtp} loginId={loginId} sendStatus={otpSendStatus} onClose={() => setShowOtpToast(false)} />
+                        )}
+                    </AnimatePresence>
+
+                    <GlassCard delay={0.1} className="w-full max-w-md p-8 relative overflow-hidden">
+                        <div className="absolute -top-10 -right-10 w-40 h-40 bg-indigo-500/20 rounded-full blur-2xl"></div>
+
+                        <div className="text-center mb-8 relative z-10">
+                            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white mb-4 shadow-lg shadow-indigo-500/30">
+                                <ShieldCheck className="w-8 h-8" />
+                            </div>
+                            <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400">
+                                {header.title}
+                            </h2>
+                            <p className="text-gray-500 dark:text-gray-400 mt-2">
+                                {header.desc}
+                            </p>
+                            {error && <p className="text-red-500 text-sm mt-3 font-medium">{error}</p>}
+                            {successMsg && <p className="text-emerald-500 text-sm mt-3 font-medium">{successMsg}</p>}
+                        </div>
+
+                        <form onSubmit={handleSubmit} className="space-y-5 relative z-10">
+                            {step === 1 ? (
+                                <>
+                                    {authMode === "register" && (
+                                        <Input
+                                            label="Full Name"
+                                            icon={Target}
+                                            placeholder="John Doe"
+                                            value={name}
+                                            onChange={(e) => setName(e.target.value)}
+                                            required
+                                        />
+                                    )}
+                                    <Input
+                                        label="Email or Mobile Number"
+                                        type="text"
+                                        icon={Mail}
+                                        placeholder="you@example.com or +1234567890"
+                                        value={loginId}
+                                        onChange={(e) => setLoginId(e.target.value)}
+                                        required
+                                    />
+                                    <Input
+                                        label={authMode === "forgot" ? "New Password" : "Password"}
+                                        type="password"
+                                        icon={Lock}
+                                        placeholder="••••••••"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        required
+                                    />
+
+                                    {authMode === "login" && (
+                                        <div className="flex justify-end">
+                                            <button
+                                                type="button"
+                                                onClick={() => switchMode("forgot")}
+                                                className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 transition-colors"
+                                            >
+                                                Forgot Password?
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    <Button type="submit" className="w-full mt-6 py-3 text-lg">
+                                        {authMode === "login" ? "Sign In" : authMode === "register" ? "Send OTP & Verify" : "Send OTP & Reset"}
+                                    </Button>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="space-y-1">
+                                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">Enter 6-Digit OTP</label>
+                                        <div className="flex gap-2 justify-center">
+                                            {[0, 1, 2, 3, 4, 5].map((i) => (
+                                                <input
+                                                    key={i}
+                                                    id={`otp-${i}`}
+                                                    type="text"
+                                                    maxLength="1"
+                                                    value={enteredOtp[i] || ""}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value.replace(/[^0-9]/g, "");
+                                                        const newOtp = enteredOtp.split("");
+                                                        newOtp[i] = val;
+                                                        setEnteredOtp(newOtp.join(""));
+                                                        if (val && i < 5) {
+                                                            document.getElementById(`otp-${i + 1}`)?.focus();
+                                                        }
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === "Backspace" && !enteredOtp[i] && i > 0) {
+                                                            document.getElementById(`otp-${i - 1}`)?.focus();
+                                                        }
+                                                    }}
+                                                    className="w-12 h-14 text-center text-2xl font-bold bg-white/50 dark:bg-dark/50 border-2 border-gray-200 dark:border-gray-700 focus:border-indigo-500 dark:focus:border-indigo-400 rounded-xl outline-none transition-all focus:ring-2 focus:ring-indigo-500/20"
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="text-center">
+                                        <button
+                                            type="button"
+                                            onClick={handleResendOtp}
+                                            disabled={resendTimer > 0}
+                                            className={`text-sm font-medium transition-colors ${resendTimer > 0 ? "text-gray-400 cursor-not-allowed" : "text-indigo-600 dark:text-indigo-400 hover:text-indigo-500"}`}
+                                        >
+                                            {resendTimer > 0 ? `Resend OTP in ${resendTimer}s` : "Resend OTP"}
+                                        </button>
+                                    </div>
+
+                                    <Button type="submit" className="w-full mt-4 py-3 text-lg">
+                                        Verify & Continue
+                                    </Button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => { setStep(1); setEnteredOtp(""); setError(""); }}
+                                        className="w-full text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors mt-2"
+                                    >
+                                        ← Go back
+                                    </button>
+                                </>
+                            )}
+                        </form>
+
+                        {step === 1 && (
+                            <div className="mt-6 text-center text-sm relative z-10 text-gray-600 dark:text-gray-400">
+                                {authMode === "login" ? "Don't have an account? " : "Already have an account? "}
+                                <button
+                                    type="button"
+                                    onClick={() => switchMode(authMode === "login" ? "register" : "login")}
+                                    className="font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 transition-colors"
+                                >
+                                    {authMode === "login" ? "Sign up here" : "Log in here"}
+                                </button>
+                            </div>
+                        )}
+                    </GlassCard>
+                </div>
+            );
+        };
+
+        // --- DASHBOARD COMPONENT ---
+        const Dashboard = ({ habits }) => {
+            const completedToday = habits.filter(h => h.done).length;
+            const total = habits.length;
+            const completionRate = total ? Math.round((completedToday / total) * 100) : 0;
+            const totalStreaks = habits.reduce((acc, curr) => acc + curr.streak, 0);
+
+            // Mock Chart Data
+            const mockChartData = [
+                { name: 'Mon', completed: 2 },
+                { name: 'Tue', completed: 3 },
+                { name: 'Wed', completed: 4 },
+                { name: 'Thu', completed: 2 },
+                { name: 'Fri', completed: 5 },
+                { name: 'Sat', completed: 4 },
+                { name: 'Sun', completed: completedToday }
+            ];
+
+            const pieData = [
+                { name: 'Completed', value: completedToday, color: '#10b981' }, // emerald-500
+                { name: 'Pending', value: total - completedToday, color: '#f43f5e' } // rose-500
+            ];
+
+            return (
+                <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 20 }}
+                    className="space-y-6"
+                >
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <GlassCard delay={0.1} className="p-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-gray-500 dark:text-gray-400 text-sm font-semibold uppercase tracking-wider">Today's Progress</p>
+                                    <h3 className="text-4xl font-bold mt-2 text-indigo-600 dark:text-indigo-400">{completionRate}%</h3>
+                                </div>
+                                <div className="p-3 bg-indigo-100 dark:bg-indigo-900/40 rounded-xl text-indigo-600 dark:text-indigo-400">
+                                    <Activity className="w-8 h-8" />
+                                </div>
+                            </div>
+                            <div className="w-full bg-gray-200 dark:bg-gray-800 rounded-full h-2 mt-4 overflow-hidden">
+                                <motion.div
+                                    initial={{ width: 0 }} animate={{ width: `${completionRate}%` }} transition={{ duration: 1, ease: 'easeOut' }}
+                                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
+                                />
+                            </div>
+                        </GlassCard>
+
+                        <GlassCard delay={0.2} className="p-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-gray-500 dark:text-gray-400 text-sm font-semibold uppercase tracking-wider">Active Habits</p>
+                                    <h3 className="text-4xl font-bold mt-2 text-gray-800 dark:text-white">
+                                        {completedToday} <span className="text-lg text-gray-400">/ {total}</span>
+                                    </h3>
+                                </div>
+                                <div className="p-3 bg-emerald-100 dark:bg-emerald-900/40 rounded-xl text-emerald-600 dark:text-emerald-400">
+                                    <CheckCircle className="w-8 h-8" />
+                                </div>
+                            </div>
+                        </GlassCard>
+
+                        <GlassCard delay={0.3} className="p-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-gray-500 dark:text-gray-400 text-sm font-semibold uppercase tracking-wider">Total Streaks</p>
+                                    <h3 className="text-4xl font-bold mt-2 text-orange-500 dark:text-orange-400 flex items-center gap-1">
+                                        {totalStreaks} <span className="text-3xl">🔥</span>
+                                    </h3>
+                                </div>
+                                <div className="p-3 bg-orange-100 dark:bg-orange-900/40 rounded-xl text-orange-600 dark:text-orange-400">
+                                    <Zap className="w-8 h-8" />
+                                </div>
+                            </div>
+                        </GlassCard>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <GlassCard delay={0.4} className="p-6 lg:col-span-2">
+                            <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
+                                <BarChart3 className="w-5 h-5 text-indigo-500" /> Weekly Activity
+                            </h3>
+                            <div className="h-64 w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <AreaChart data={mockChartData}>
+                                        <defs>
+                                            <linearGradient id="colorCom" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
+                                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(156, 163, 175, 0.2)" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#9ca3af', fontSize: 12 }} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#9ca3af', fontSize: 12 }} />
+                                        <Tooltip contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', borderRadius: '12px', border: 'none', color: '#fff' }} />
+                                        <Area type="monotone" dataKey="completed" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorCom)" />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </GlassCard>
+
+                        <GlassCard delay={0.5} className="p-6">
+                            <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
+                                <Target className="w-5 h-5 text-purple-500" /> Completion Ratio
+                            </h3>
+                            <div className="h-48 w-full flex items-center justify-center relative">
+                                {total === 0 ? (
+                                    <p className="text-gray-400">No habits added yet!</p>
+                                ) : (
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <PieChart>
+                                            <Pie
+                                                data={pieData}
+                                                cx="50%"
+                                                cy="50%"
+                                                innerRadius={60}
+                                                outerRadius={80}
+                                                paddingAngle={5}
+                                                dataKey="value"
+                                                stroke="none"
+                                            >
+                                                {pieData.map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                                ))}
+                                            </Pie>
+                                            <Tooltip contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', borderRadius: '12px', border: 'none', color: '#fff' }} />
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                )}
+                                {total > 0 && (
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                        <span className="text-3xl font-bold text-gray-800 dark:text-white">{completionRate}%</span>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="mt-4 flex justify-center gap-4">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
+                                    <span className="text-sm text-gray-600 dark:text-gray-300">Done</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <div className="w-3 h-3 rounded-full bg-rose-500"></div>
+                                    <span className="text-sm text-gray-600 dark:text-gray-300">Pending</span>
+                                </div>
+                            </div>
+                        </GlassCard>
+                    </div>
+                </motion.div>
+            );
+        };
+
+        // --- HABITS COMPONENT ---
+        const HabitManager = ({ habits, setHabits }) => {
+            const [newHabit, setNewHabit] = useState("");
+            const [category, setCategory] = useState("Daily"); // Daily, Health, Work
+
+            const addHabit = (e) => {
+                e.preventDefault();
+                if (!newHabit.trim()) return;
+                setHabits([
+                    {
+                        id: Date.now(),
+                        name: newHabit,
+                        category,
+                        done: false,
+                        streak: 0,
+                        createdAt: new Date().toLocaleDateString(),
+                    },
+                    ...habits,
+                ]);
+                setNewHabit("");
+            };
+
+            const toggleHabit = (id) => {
+                setHabits(habits.map(h => {
+                    if (h.id === id) {
+                        const newDone = !h.done;
+                        return {
+                            ...h,
+                            done: newDone,
+                            streak: newDone ? h.streak + 1 : Math.max(0, h.streak - 1)
+                        };
+                    }
+                    return h;
+                }));
+            };
+
+            const deleteHabit = (id) => {
+                setHabits(habits.filter(h => h.id !== id));
+            };
+
+            return (
+                <motion.div
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="space-y-6 max-w-4xl mx-auto"
+                >
+                    <GlassCard delay={0.1} className="p-6 border-l-4 border-l-indigo-500">
+                        <form onSubmit={addHabit} className="flex flex-col sm:flex-row gap-4 items-end">
+                            <div className="flex-1 w-full relative">
+                                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 block">Forge a new habit</label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <Plus className="h-5 w-5 text-gray-400" />
+                                    </div>
+                                    <input
+                                        type="text"
+                                        placeholder="Read for 30 minutes..."
+                                        value={newHabit}
+                                        onChange={(e) => setNewHabit(e.target.value)}
+                                        className="w-full bg-white/50 dark:bg-darker/50 border border-gray-200 dark:border-gray-700 rounded-xl pl-10 pr-4 py-3 placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-500/30 outline-none transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="w-full sm:w-48 relative">
+                                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 block">Category</label>
+                                <select
+                                    value={category}
+                                    onChange={(e) => setCategory(e.target.value)}
+                                    className="w-full bg-white/50 dark:bg-darker/50 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 appearance-none outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all text-gray-700 dark:text-gray-200"
+                                >
+                                    <option value="Daily">Daily Routine</option>
+                                    <option value="Health">Health & Fitness</option>
+                                    <option value="Work">Work & Study</option>
+                                </select>
+                            </div>
+
+                            <Button type="submit" className="w-full sm:w-auto py-3">Add Habit</Button>
+                        </form>
+                    </GlassCard>
+
+                    <div className="space-y-3 pt-4">
+                        <AnimatePresence>
+                            {habits.length === 0 ? (
+                                <motion.div
+                                    initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                                    className="text-center py-16 px-4 bg-white/20 dark:bg-gray-800/20 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700 backdrop-blur-sm"
+                                >
+                                    <div className="inline-flex w-16 h-16 rounded-full bg-indigo-100 dark:bg-indigo-900/30 items-center justify-center text-indigo-500 mb-4">
+                                        <Target className="w-8 h-8" />
+                                    </div>
+                                    <h3 className="text-xl font-medium text-gray-800 dark:text-gray-200">Your slate is clean</h3>
+                                    <p className="text-gray-500 dark:text-gray-400 mt-2">Start adding habits above to track your progress.</p>
+                                </motion.div>
+                            ) : (
+                                habits.map((h, index) => {
+                                    const catColors = {
+                                        "Daily": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+                                        "Health": "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+                                        "Work": "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+                                    };
+
+                                    return (
+                                        <motion.div
+                                            key={h.id}
+                                            initial={{ opacity: 0, y: 20 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, scale: 0.95 }}
+                                            transition={{ duration: 0.2, delay: Math.min(index * 0.05, 0.5) }}
+                                            className={`group flex items-center p-4 sm:p-5 rounded-2xl shadow-sm border backdrop-blur-lg transition-all ${h.done
+                                                ? "bg-white/40 dark:bg-gray-800/30 border-gray-100 dark:border-gray-800/50"
+                                                : "bg-white/80 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-700"
+                                                }`}
+                                        >
+                                            <button
+                                                onClick={() => toggleHabit(h.id)}
+                                                className={`mr-4 sm:mr-6 flex-shrink-0 transition-all hover:scale-110 focus:outline-none ${h.done ? "text-emerald-500 scale-110" : "text-gray-300 dark:text-gray-600 hover:text-indigo-400"
+                                                    }`}
+                                            >
+                                                <CheckCircle className="w-8 h-8 sm:w-10 sm:h-10" />
+                                            </button>
+
+                                            <div className="flex-1 min-w-0 pr-4">
+                                                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 mb-1">
+                                                    <h4 className={`text-lg font-semibold truncate transition-all ${h.done ? "line-through text-gray-500 dark:text-gray-400" : "text-gray-900 dark:text-gray-100"}`}>
+                                                        {h.name}
+                                                    </h4>
+                                                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium w-fit ${catColors[h.category] || catColors["Daily"]}`}>
+                                                        {h.category}
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+                                                    <span className={`flex items-center gap-1 font-medium ${h.streak > 2 ? 'text-orange-500 dark:text-orange-400' : ''}`}>
+                                                        {h.streak > 0 ? (
+                                                            <motion.span animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 2 }}>🔥</motion.span>
+                                                        ) : (
+                                                            "🔥"
+                                                        )}
+                                                        {h.streak} streak
+                                                    </span>
+                                                    <span className="hidden sm:inline">Created {h.createdAt}</span>
+                                                </div>
+                                            </div>
+
+                                            <button
+                                                onClick={() => deleteHabit(h.id)}
+                                                className="p-2 sm:p-3 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all opacity-100 lg:opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                                title="Delete"
+                                            >
+                                                <Trash2 className="w-5 h-5 sm:w-6 sm:h-6" />
+                                            </button>
+                                        </motion.div>
+                                    );
+                                })
+                            )}
+                        </AnimatePresence>
+                    </div>
+                </motion.div>
+            );
+        };
+
+        // --- FITNESS PLAN COMPONENT (Gym Rats) ---
+        const FitnessPlan = ({ setHabits, habits }) => {
+            const exerciseRoutine = [
+                { day: "Monday", focus: "Push (Chest, Shoulders, Triceps)", exercises: "Bench Press 4x8, OHP 3x10, Incline DB Press 3x12, Tricep Pushdowns 3x15" },
+                { day: "Tuesday", focus: "Pull (Back, Biceps)", exercises: "Deadlift 3x5, Pull-ups 3xFailure, Barbell Rows 3x10, Bicep Curls 4x12" },
+                { day: "Wednesday", focus: "Legs (Quads, Hams, Calves)", exercises: "Squats 4x8, Leg Press 3x12, RDLs 3x10, Calf Raises 4x15" },
+                { day: "Thursday", focus: "Active Recovery", exercises: "Light cardio, stretching, mobility work" },
+                { day: "Friday", focus: "Push (Hypertrophy)", exercises: "DB Bench 4x10, Lateral Raises 4x15, Pec Deck 3x12, Skullcrushers 3x12" },
+                { day: "Saturday", focus: "Pull & Legs", exercises: "Lat Pulldown 4x10, Hack Squat 3x10, Face Pulls 4x15, Hamstring Curls 3x15" },
+                { day: "Sunday", focus: "Rest", exercises: "Full physical and mental recovery" }
+            ];
+
+            const dietPlan = [
+                { meal: "Pre-Workout (1 Hr Before)", food: "Bowl of Oats, 1 Banana, scoop of Whey Protein. (High carb, moderate protein)", icon: Flame },
+                { meal: "Post-Workout", food: "2 Scoops Whey, Rice Cakes or fast digesting carbs like gummy bears. (High protein, high glycemic carbs)", icon: Activity },
+                { meal: "Lunch", food: "250g Chicken Breast, 200g Jasmine White Rice, 100g Broccoli.", icon: Utensils },
+                { meal: "Dinner", food: "200g Lean Ground Beef (93/7), Sweet Potato, Asparagus.", icon: Utensils },
+                { meal: "Before Bed", food: "Casein Protein or Greek Yogurt. (Slow digesting protein for recovery)", icon: Moon }
+            ];
+
+            const addWorkoutHabit = () => {
+                const gymHabitExists = habits.find(h => h.name === "Hit the Gym (PPL)");
+                if (!gymHabitExists) {
+                    setHabits([
+                        { id: Date.now(), name: "Hit the Gym (PPL)", category: "Health", done: false, streak: 0, createdAt: new Date().toLocaleDateString() },
+                        ...habits
+                    ]);
+                    alert("Added 'Hit the Gym (PPL)' to your Habits Tracker!");
+                } else {
+                    alert("Gym Habit is already in your tracker!");
+                }
+            };
+
+            const addDietHabit = () => {
+                const dietHabitExists = habits.find(h => h.name === "Hit Macro Goals");
+                if (!dietHabitExists) {
+                    setHabits([
+                        { id: Date.now() + 1, name: "Hit Macro Goals", category: "Health", done: false, streak: 0, createdAt: new Date().toLocaleDateString() },
+                        ...habits
+                    ]);
+                    alert("Added 'Hit Macro Goals' to your Habits Tracker!");
+                } else {
+                    alert("Diet Habit is already in your tracker!");
+                }
+            };
+
+            return (
+                <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 20 }}
+                    className="space-y-6"
+                >
+                    <div className="flex justify-between items-center mb-6">
+                        <div>
+                            <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-500 to-teal-500 flex items-center gap-2">
+                                <Dumbbell className="text-emerald-500 w-8 h-8" /> Gym Rat Protocol
+                            </h2>
+                            <p className="text-gray-500 dark:text-gray-400 mt-1">Science-based PPL split and muscle-building diet.</p>
+                        </div>
+                        <div className="flex gap-2">
+                            <Button onClick={addWorkoutHabit} variant="outline" className="text-sm px-3 py-1.5" icon={Dumbbell}>Track Workout</Button>
+                            <Button onClick={addDietHabit} variant="outline" className="text-sm px-3 py-1.5" icon={Utensils}>Track Diet</Button>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Weekly Routine */}
+                        <GlassCard delay={0.1} className="p-6">
+                            <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+                                <Activity className="w-5 h-5 text-indigo-500" /> PPL Training Split
+                            </h3>
+                            <div className="space-y-4">
+                                {exerciseRoutine.map((item, i) => (
+                                    <div key={i} className="border-l-2 border-indigo-400 pl-4 py-1">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <span className="font-semibold text-gray-800 dark:text-gray-200">{item.day}</span>
+                                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
+                                                {item.focus}
+                                            </span>
+                                        </div>
+                                        <p className="text-sm text-gray-600 dark:text-gray-400">{item.exercises}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </GlassCard>
+
+                        {/* Diet Plan */}
+                        <div className="space-y-6">
+                            <GlassCard delay={0.2} className="p-6 bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border-emerald-500/20">
+                                <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+                                    <Utensils className="w-5 h-5 text-emerald-500" /> Hypertrophy Diet
+                                </h3>
+                                <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                                    <strong>Goal:</strong> 1g Protein per lb of bodyweight. Caloric surplus (+300-500 kcal) for lean mass grain.
+                                </p>
+                                <div className="space-y-3">
+                                    {dietPlan.map((item, i) => (
+                                        <div key={i} className="flex gap-3 items-start p-3 rounded-lg bg-white/40 dark:bg-gray-800/40">
+                                            <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg text-emerald-600 dark:text-emerald-400">
+                                                <item.icon className="w-4 h-4" />
+                                            </div>
+                                            <div>
+                                                <h4 className="font-semibold text-sm text-gray-800 dark:text-gray-200">{item.meal}</h4>
+                                                <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">{item.food}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </GlassCard>
+
+                            <GlassCard delay={0.3} className="p-6">
+                                <h3 className="text-sm font-bold text-gray-800 dark:text-white mb-2 uppercase tracking-wider text-center">
+                                    Macro Distribution Profile
+                                </h3>
+                                <div className="flex h-4 rounded-full overflow-hidden mt-4">
+                                    {/* Protein 30%, Carbs 50%, Fat 20% */}
+                                    <div className="bg-rose-500 h-full w-[30%]" title="Protein 30%"></div>
+                                    <div className="bg-amber-500 h-full w-[50%]" title="Carbs 50%"></div>
+                                    <div className="bg-emerald-500 h-full w-[20%]" title="Fats 20%"></div>
+                                </div>
+                                <div className="flex justify-between text-xs mt-2 font-medium">
+                                    <span className="text-rose-600 dark:text-rose-400">Protein (30%)</span>
+                                    <span className="text-amber-600 dark:text-amber-400">Carbs (50%)</span>
+                                    <span className="text-emerald-600 dark:text-emerald-400">Fats (20%)</span>
+                                </div>
+                            </GlassCard>
+                        </div>
+                    </div>
+                </motion.div>
+            );
+        };
+
+        // --- MONTHLY TRACKER COMPONENT ---
+        const MonthlyTracker = ({ habits }) => {
+            const [currentDate, setCurrentDate] = useState(new Date());
+            const [monthlyData, setMonthlyData] = useState(() => {
+                const saved = localStorage.getItem("monthlyHabitData");
+                return saved ? JSON.parse(saved) : {};
+            });
+
+            const getDaysInMonth = (date) => {
+                return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+            };
+
+            const getFirstDayOfMonth = (date) => {
+                return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+            };
+
+            const previousMonth = () => {
+                setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
+            };
+
+            const nextMonth = () => {
+                setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1));
+            };
+
+            const toggleDayCompletion = (habitId, day) => {
+                const monthKey = `${currentDate.getFullYear()}-${currentDate.getMonth()}`;
+                const dateKey = `${monthKey}-${habitId}-${day}`;
+
+                setMonthlyData(prev => {
+                    const updated = { ...prev };
+                    if (updated[dateKey]) {
+                        delete updated[dateKey];
+                    } else {
+                        updated[dateKey] = true;
+                    }
+                    localStorage.setItem("monthlyHabitData", JSON.stringify(updated));
+                    return updated;
+                });
+            };
+
+            const isDayCompleted = (habitId, day) => {
+                const monthKey = `${currentDate.getFullYear()}-${currentDate.getMonth()}`;
+                const dateKey = `${monthKey}-${habitId}-${day}`;
+                return monthlyData[dateKey] === true;
+            };
+
+            // Calculate current streak for a habit
+            const calculateCurrentStreak = (habitId) => {
+                let streak = 0;
+                const today = new Date();
+                let checkDate = new Date(today);
+
+                while (streak < 365) {
+                    const monthKey = `${checkDate.getFullYear()}-${checkDate.getMonth()}`;
+                    const day = checkDate.getDate();
+                    const dateKey = `${monthKey}-${habitId}-${day}`;
+
+                    if (!monthlyData[dateKey]) {
+                        break;
+                    }
+                    streak++;
+                    checkDate.setDate(checkDate.getDate() - 1);
+                }
+                return streak;
+            };
+
+            // Calculate longest streak for a habit
+            const calculateLongestStreak = (habitId) => {
+                let longestStreak = 0;
+                let currentStreak = 0;
+                const startDate = new Date(2020, 0, 1);
+                const today = new Date();
+
+                for (let d = new Date(startDate); d <= today; d.setDate(d.getDate() + 1)) {
+                    const monthKey = `${d.getFullYear()}-${d.getMonth()}`;
+                    const day = d.getDate();
+                    const dateKey = `${monthKey}-${habitId}-${day}`;
+
+                    if (monthlyData[dateKey]) {
+                        currentStreak++;
+                        longestStreak = Math.max(longestStreak, currentStreak);
+                    } else {
+                        currentStreak = 0;
+                    }
+                }
+                return longestStreak;
+            };
+
+            const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            const daysInMonth = getDaysInMonth(currentDate);
+            const firstDay = getFirstDayOfMonth(currentDate);
+            const days = Array(firstDay).fill(null).concat(Array.from({ length: daysInMonth }, (_, i) => i + 1));
+            const weeks = [];
+            for (let i = 0; i < days.length; i += 7) {
+                weeks.push(days.slice(i, i + 7));
+            }
+
+            // Calculate monthly stats
+            const monthlyStats = useMemo(() => {
+                const stats = {};
+                habits.forEach(habit => {
+                    let completions = 0;
+                    for (let day = 1; day <= daysInMonth; day++) {
+                        if (isDayCompleted(habit.id, day)) {
+                            completions++;
+                        }
+                    }
+                    const completionRate = daysInMonth > 0 ? Math.round((completions / daysInMonth) * 100) : 0;
+                    const currentStreak = calculateCurrentStreak(habit.id);
+                    const longestStreak = calculateLongestStreak(habit.id);
+
+                    stats[habit.id] = {
+                        name: habit.name,
+                        category: habit.category,
+                        monthlyCompletions: completions,
+                        completionRate: completionRate,
+                        currentStreak: currentStreak,
+                        longestStreak: longestStreak
+                    };
+                });
+                return stats;
+            }, [habits, daysInMonth, monthlyData, currentDate]);
+
+            return (
+                <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 20 }}
+                    className="space-y-6"
+                >
+                    {/* Calendar Header */}
+                    <GlassCard delay={0.1} className="p-6">
+                        <div className="flex items-center justify-between mb-8">
+                            <div>
+                                <h3 className="text-3xl font-bold text-gray-800 dark:text-white">
+                                    {months[currentDate.getMonth()]} {currentDate.getFullYear()}
+                                </h3>
+                                <p className="text-gray-500 dark:text-gray-400 mt-1">Track your habit completion throughout the month</p>
+                            </div>
+                            <div className="flex gap-3">
+                                <Button variant="outline" onClick={previousMonth} className="px-4">← Prev</Button>
+                                <Button variant="outline" onClick={() => setCurrentDate(new Date())} className="px-4">Today</Button>
+                                <Button variant="outline" onClick={nextMonth} className="px-4">Next →</Button>
+                            </div>
+                        </div>
+
+                        {/* Calendar Grid */}
+                        <div className="space-y-4">
+                            {/* Day labels */}
+                            <div className="grid grid-cols-7 gap-2 mb-2">
+                                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                                    <div key={day} className="text-center font-semibold text-gray-600 dark:text-gray-400 text-sm py-2">
+                                        {day}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Calendar dates */}
+                            <div className="grid grid-cols-7 gap-2">
+                                {weeks.map((week, weekIdx) => (
+                                    week.map((day, dayIdx) => (
+                                        <motion.div
+                                            key={`${weekIdx}-${dayIdx}`}
+                                            initial={{ opacity: 0, scale: 0.8 }}
+                                            animate={{ opacity: 1, scale: 1 }}
+                                            transition={{ delay: weekIdx * 0.05 + dayIdx * 0.02 }}
+                                            className={`aspect-square rounded-lg flex items-center justify-center font-semibold transition-all ${day === null
+                                                ? "bg-transparent"
+                                                : day === new Date().getDate() && currentDate.getMonth() === new Date().getMonth()
+                                                    ? "bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/30 hover:scale-105"
+                                                    : "bg-white/40 dark:bg-gray-800/40 text-gray-800 dark:text-gray-200 hover:bg-white/60 dark:hover:bg-gray-800/60 cursor-pointer"
+                                                }`}
+                                        >
+                                            {day}
+                                        </motion.div>
+                                    ))
+                                ))}
+                            </div>
+                        </div>
+                    </GlassCard>
+
+                    {/* Monthly Statistics */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <GlassCard delay={0.2} className="p-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-gray-500 dark:text-gray-400 text-sm font-semibold uppercase tracking-wider">Total Days</p>
+                                    <h3 className="text-4xl font-bold mt-2 text-indigo-600 dark:text-indigo-400">{daysInMonth}</h3>
+                                </div>
+                                <div className="p-3 bg-indigo-100 dark:bg-indigo-900/40 rounded-xl text-indigo-600 dark:text-indigo-400">
+                                    <Calendar className="w-8 h-8" />
+                                </div>
+                            </div>
+                        </GlassCard>
+
+                        <GlassCard delay={0.3} className="p-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-gray-500 dark:text-gray-400 text-sm font-semibold uppercase tracking-wider">Active Habits</p>
+                                    <h3 className="text-4xl font-bold mt-2 text-emerald-600 dark:text-emerald-400">{habits.length}</h3>
+                                </div>
+                                <div className="p-3 bg-emerald-100 dark:bg-emerald-900/40 rounded-xl text-emerald-600 dark:text-emerald-400">
+                                    <Activity className="w-8 h-8" />
+                                </div>
+                            </div>
+                        </GlassCard>
+
+                        <GlassCard delay={0.4} className="p-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-gray-500 dark:text-gray-400 text-sm font-semibold uppercase tracking-wider">Avg. Completion</p>
+                                    <h3 className="text-4xl font-bold mt-2 text-purple-600 dark:text-purple-400">
+                                        {habits.length > 0 ? Math.round(Object.values(monthlyStats).reduce((acc, s) => acc + s.completionRate, 0) / habits.length) : 0}%
+                                    </h3>
+                                </div>
+                                <div className="p-3 bg-purple-100 dark:bg-purple-900/40 rounded-xl text-purple-600 dark:text-purple-400">
+                                    <TrendingUp className="w-8 h-8" />
+                                </div>
+                            </div>
+                        </GlassCard>
+                    </div>
+
+                    {/* Interactive Calendar for Current Month */}
+                    <div className="space-y-6">
+                        {habits.length === 0 ? (
+                            <GlassCard delay={0.45} className="p-6 text-center">
+                                <p className="text-gray-500 dark:text-gray-400">Add habits to mark daily completions</p>
+                            </GlassCard>
+                        ) : (
+                            habits.map((habit, habitIdx) => (
+                                <GlassCard key={habit.id} delay={0.45 + habitIdx * 0.1} className="p-6">
+                                    <div className="mb-4">
+                                        <h4 className="font-semibold text-gray-800 dark:text-white">{habit.name}</h4>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Click days to mark completion</p>
+                                    </div>
+                                    <div className="grid grid-cols-7 gap-1">
+                                        {Array.from({ length: daysInMonth }).map((_, dayIdx) => {
+                                            const day = dayIdx + 1;
+                                            const isCompleted = isDayCompleted(habit.id, day);
+
+                                            return (
+                                                <motion.button
+                                                    key={dayIdx}
+                                                    whileHover={{ scale: 1.1 }}
+                                                    whileTap={{ scale: 0.95 }}
+                                                    onClick={() => toggleDayCompletion(habit.id, day)}
+                                                    className={`w-8 h-8 rounded-md font-semibold text-xs transition-all ${isCompleted
+                                                        ? "bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-lg shadow-emerald-500/30"
+                                                        : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-300 dark:hover:bg-gray-600"
+                                                        }`}
+                                                    title={`Day ${day}: ${isCompleted ? 'Completed' : 'Not completed'}`}
+                                                >
+                                                    {day}
+                                                </motion.button>
+                                            );
+                                        })}
+                                    </div>
+                                </GlassCard>
+                            ))
+                        )}
+                    </div>
+
+                    {/* Habit Performance with Streaks */}
+                    <GlassCard delay={0.5} className="p-6">
+                        <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
+                            <Flame className="w-5 h-5 text-orange-500" /> Streaks & Performance
+                        </h3>
+                        <div className="space-y-5">
+                            {habits.length === 0 ? (
+                                <p className="text-center text-gray-500 dark:text-gray-400 py-8">No habits to track. Add some habits to see streaks and performance.</p>
+                            ) : (
+                                habits.map((habit, idx) => {
+                                    const stats = monthlyStats[habit.id];
+                                    const catColors = {
+                                        "Daily": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+                                        "Health": "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+                                        "Work": "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+                                    };
+
+                                    return (
+                                        <motion.div
+                                            key={habit.id}
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ delay: idx * 0.1 }}
+                                            className="p-5 rounded-lg bg-gradient-to-br from-white/40 to-white/20 dark:from-gray-800/40 dark:to-gray-800/20 border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-600 transition-all"
+                                        >
+                                            <div className="flex items-start justify-between mb-4">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <h4 className="font-semibold text-gray-800 dark:text-white">{habit.name}</h4>
+                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${catColors[habit.category] || catColors["Daily"]}`}>
+                                                            {habit.category}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{stats.completionRate}%</p>
+                                                    <p className="text-xs text-gray-500">{stats.monthlyCompletions}/{daysInMonth} days</p>
+                                                </div>
+                                            </div>
+
+                                            {/* Progress bar */}
+                                            <div className="w-full bg-gray-300 dark:bg-gray-700 rounded-full h-2 overflow-hidden mb-4">
+                                                <motion.div
+                                                    initial={{ width: 0 }}
+                                                    animate={{ width: `${stats.completionRate}%` }}
+                                                    transition={{ duration: 0.8, ease: 'easeOut' }}
+                                                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
+                                                />
+                                            </div>
+
+                                            {/* Streak badges */}
+                                            <div className="flex gap-3 flex-wrap">
+                                                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-100 dark:bg-orange-900/30">
+                                                    <Flame className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                                                    <div>
+                                                        <p className="text-xs text-gray-600 dark:text-gray-400">Current Streak</p>
+                                                        <p className="font-bold text-orange-700 dark:text-orange-300">{stats.currentStreak} days</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-100 dark:bg-yellow-900/30">
+                                                    <Award className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
+                                                    <div>
+                                                        <p className="text-xs text-gray-600 dark:text-gray-400">Longest Streak</p>
+                                                        <p className="font-bold text-yellow-700 dark:text-yellow-300">{stats.longestStreak} days</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </motion.div>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </GlassCard>
+
+                    {/* Historical Calendar View */}
+                    <GlassCard delay={0.6} className="p-6">
+                        <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
+                            <Calendar className="w-5 h-5 text-indigo-500" /> Historical Consistency
+                        </h3>
+                        <div className="space-y-8">
+                            {habits.length === 0 ? (
+                                <p className="text-center text-gray-500 dark:text-gray-400 py-8">Add habits to see historical data</p>
+                            ) : (
+                                habits.map((habit, habitIdx) => {
+                                    const catColors = {
+                                        "Daily": "text-blue-600 dark:text-blue-400",
+                                        "Health": "text-emerald-600 dark:text-emerald-400",
+                                        "Work": "text-purple-600 dark:text-purple-400"
+                                    };
+
+                                    return (
+                                        <div key={habit.id}>
+                                            <h4 className={`font-semibold text-gray-800 dark:text-white mb-4 ${catColors[habit.category]}`}>
+                                                {habit.name}
+                                            </h4>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                                {Array.from({ length: 6 }).map((_, monthOffset) => {
+                                                    const month = new Date(currentDate.getFullYear(), currentDate.getMonth() - monthOffset);
+                                                    const monthDaysInMonth = getDaysInMonth(month);
+                                                    const monthFirstDay = getFirstDayOfMonth(month);
+                                                    const monthDays = Array(monthFirstDay).fill(null).concat(Array.from({ length: monthDaysInMonth }, (_, i) => i + 1));
+                                                    const monthWeeks = [];
+                                                    for (let i = 0; i < monthDays.length; i += 7) {
+                                                        monthWeeks.push(monthDays.slice(i, i + 7));
+                                                    }
+
+                                                    let completionCount = 0;
+                                                    for (let day = 1; day <= monthDaysInMonth; day++) {
+                                                        const monthKey = `${month.getFullYear()}-${month.getMonth()}`;
+                                                        const dateKey = `${monthKey}-${habit.id}-${day}`;
+                                                        if (monthlyData[dateKey]) completionCount++;
+                                                    }
+                                                    const monthCompletionRate = Math.round((completionCount / monthDaysInMonth) * 100);
+
+                                                    return (
+                                                        <motion.div
+                                                            key={monthOffset}
+                                                            initial={{ opacity: 0, scale: 0.9 }}
+                                                            animate={{ opacity: 1, scale: 1 }}
+                                                            transition={{ delay: habitIdx * 0.05 + monthOffset * 0.02 }}
+                                                            className="p-3 rounded-lg bg-white/20 dark:bg-gray-800/20 border border-gray-200 dark:border-gray-700"
+                                                        >
+                                                            <div className="mb-2">
+                                                                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                                                                    {months[month.getMonth()]} {month.getFullYear()}
+                                                                </p>
+                                                                <p className="text-xs text-gray-500">{monthCompletionRate}% ({completionCount}/{monthDaysInMonth})</p>
+                                                            </div>
+                                                            <div className="grid grid-cols-7 gap-0.5">
+                                                                {monthWeeks.map((week, weekIdx) => (
+                                                                    week.map((day, dayIdx) => {
+                                                                        const isCompleted = day && (() => {
+                                                                            const monthKey = `${month.getFullYear()}-${month.getMonth()}`;
+                                                                            const dateKey = `${monthKey}-${habit.id}-${day}`;
+                                                                            return monthlyData[dateKey] === true;
+                                                                        })();
+
+                                                                        return (
+                                                                            <div
+                                                                                key={`${weekIdx}-${dayIdx}`}
+                                                                                className={`w-4 h-4 rounded-sm text-xs flex items-center justify-center font-bold transition-all ${day === null
+                                                                                    ? "bg-transparent"
+                                                                                    : isCompleted
+                                                                                        ? "bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-sm"
+                                                                                        : "bg-gray-300 dark:bg-gray-600 text-gray-600 dark:text-gray-400"
+                                                                                    }`}
+                                                                                title={day ? `${months[month.getMonth()]} ${day}, ${month.getFullYear()}` : ""}
+                                                                            >
+                                                                                {day && day}
+                                                                            </div>
+                                                                        );
+                                                                    })
+                                                                ))}
+                                                            </div>
+                                                        </motion.div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </GlassCard>
+                </motion.div>
+            );
+        };
+
+        // --- MAIN APP COMPONENT ---
+        const App = () => {
+            const { isDark, toggleTheme } = useTheme();
+            const [user, setUser] = useState(null);
+            const [view, setView] = useState("dashboard"); // dashboard, habits, monthly, fitness
+            const [habits, setHabits] = useState([]);
+            const [isLoaded, setIsLoaded] = useState(false);
+
+            // Lifecycle load
+            useEffect(() => {
+                const savedUser = localStorage.getItem("habitUser");
+                if (savedUser) setUser(JSON.parse(savedUser));
+
+                const savedHabits = localStorage.getItem("habitsData");
+                if (savedHabits) {
+                    setHabits(JSON.parse(savedHabits));
+                } else {
+                    // Seed initial demo data
+                    setHabits([
+                        { id: 1, name: "Drink 2L Water", category: "Health", done: true, streak: 5, createdAt: new Date().toLocaleDateString() },
+                        { id: 2, name: "Deep Work Session", category: "Work", done: false, streak: 2, createdAt: new Date().toLocaleDateString() }
+                    ]);
+                }
+                setTimeout(() => setIsLoaded(true), 300); // simulate loading
+            }, []);
+
+            // Save habits
+            useEffect(() => {
+                if (isLoaded) localStorage.setItem("habitsData", JSON.stringify(habits));
+            }, [habits, isLoaded]);
+
+            const handleLogout = () => {
+                localStorage.removeItem("habitUser");
+                setUser(null);
+            };
+
+            if (!isLoaded) return (
+                <div className="flex-1 flex items-center justify-center">
+                    <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+                </div>
+            );
+
+            if (!user) {
+                return <AuthScreen onLogin={setUser} />;
+            }
+
+            return (
+                <div className="flex-1 flex flex-col md:flex-row h-screen overflow-hidden bg-transparent">
+                    {/* Navigation Sidebar */}
+                    <nav className="w-full md:w-64 glass-panel border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800 flex flex-row md:flex-col justify-between p-4 z-40 relative">
+                        <div>
+                            <div className="hidden md:flex items-center gap-3 mb-8 px-2 mt-4">
+                                <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30 text-white font-bold text-xl">
+                                    <Target className="w-6 h-6" />
+                                </div>
+                                <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400">
+                                    HabitFlow
+                                </h1>
+                            </div>
+
+                            <div className="flex md:flex-col gap-2 w-full overflow-x-auto md:overflow-visible pb-2 md:pb-0">
+                                <Button
+                                    variant={view === "dashboard" ? "primary" : "ghost"}
+                                    className="justify-start md:w-full shrink-0"
+                                    onClick={() => setView("dashboard")}
+                                    icon={Home}
+                                >
+                                    Dashboard
+                                </Button>
+                                <Button
+                                    variant={view === "habits" ? "primary" : "ghost"}
+                                    className="justify-start md:w-full shrink-0"
+                                    onClick={() => setView("habits")}
+                                    icon={Activity}
+                                >
+                                    My Habits
+                                </Button>
+                                <Button
+                                    variant={view === "monthly" ? "primary" : "ghost"}
+                                    className="justify-start md:w-full shrink-0"
+                                    onClick={() => setView("monthly")}
+                                    icon={Calendar}
+                                >
+                                    Monthly
+                                </Button>
+                                <Button
+                                    variant={view === "fitness" ? "primary" : "ghost"}
+                                    className="justify-start md:w-full shrink-0"
+                                    onClick={() => setView("fitness")}
+                                    icon={Dumbbell}
+                                >
+                                    Gym Protocol
+                                </Button>
+                            </div>
+                        </div>
+
+                        <div className="hidden md:flex flex-col gap-2 relative">
+                            <div className="p-4 mb-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-indigo-200 dark:bg-indigo-800 flex items-center justify-center text-indigo-700 dark:text-indigo-300 font-bold uppercase">
+                                        {user.name.charAt(0)}
+                                    </div>
+                                    <div className="truncate">
+                                        <p className="font-semibold text-sm text-gray-800 dark:text-white truncate">{user.name}</p>
+                                        <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <Button variant="ghost" className="justify-start opacity-70 hover:opacity-100" onClick={toggleTheme} icon={isDark ? Sun : Moon}>
+                                {isDark ? "Light Mode" : "Dark Mode"}
+                            </Button>
+                            <Button variant="danger" className="justify-start" onClick={handleLogout} icon={LogOut}>
+                                Sign Out
+                            </Button>
+                        </div>
+                    </nav>
+
+                    {/* Main Content Area */}
+                    <main className="flex-1 overflow-y-auto p-4 md:p-8 relative z-10 scroll-smooth">
+                        <div className="md:hidden flex justify-between items-center mb-6 px-2">
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center text-white">
+                                    <Target className="w-4 h-4" />
+                                </div>
+                                <h1 className="text-lg font-bold">HabitFlow</h1>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button onClick={toggleTheme} className="p-2 rounded-full bg-white/50 dark:bg-gray-800/50">
+                                    {isDark ? <Sun className="w-5 h-5 text-yellow-500" /> : <Moon className="w-5 h-5 text-indigo-500" />}
+                                </button>
+                                <button onClick={handleLogout} className="p-2 rounded-full bg-red-100 dark:bg-red-900/30 text-red-500">
+                                    <LogOut className="w-5 h-5" />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="max-w-6xl mx-auto pb-24">
+                            {view !== "fitness" && view !== "monthly" && (
+                                <div className="mb-8">
+                                    <h2 className="text-3xl font-bold text-gray-800 dark:text-white">
+                                        {view === "dashboard" ? `Welcome back, ${user.name} 👋` : "Habit Tracker Manager"}
+                                    </h2>
+                                    <p className="text-gray-500 dark:text-gray-400 mt-2">
+                                        {view === "dashboard" ? "Here's your progress overview for today." : "Cultivate habits that empower your lifestyle."}
+                                    </p>
+                                </div>
+                            )}
+
+                            <AnimatePresence mode="wait">
+                                {view === "dashboard" && <Dashboard key="dash" habits={habits} />}
+                                {view === "habits" && <HabitManager key="mgr" habits={habits} setHabits={setHabits} />}
+                                {view === "monthly" && <MonthlyTracker key="monthly" habits={habits} />}
+                                {view === "fitness" && <FitnessPlan key="fit" setHabits={setHabits} habits={habits} />}
+                            </AnimatePresence>
+                        </div>
+                    </main>
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById("root"));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>
